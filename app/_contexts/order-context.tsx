@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useMemo, useReducer, useRef } from 'react'
+import React, { createContext, useContext, useEffect, useReducer, useRef } from 'react'
 
 type CustomerType = 'NORMAL' | 'VIP'
 type OrderStatus = 'PENDING' | 'PROCESSING' | 'COMPLETE'
@@ -25,7 +25,6 @@ interface State {
     processingOrders: Order[]
     completedOrders: Order[]
     bots: Bot[]
-    activeBotLimit: number
 }
 
 type Action =
@@ -35,11 +34,11 @@ type Action =
       }
     | {
           type: 'INCREASE_BOTS'
-          payload: { count: number; newBots: Bot[] }
+          payload: { newBots: Bot[] }
       }
     | {
-          type: 'DECREASE_BOTS'
-          payload: { count: number }
+          type: 'DESTROY_BOTS'
+          payload: { botIds: number[] }
       }
     | {
           type: 'DISPATCH_ORDERS'
@@ -79,7 +78,6 @@ const initialState: State = {
     processingOrders: [],
     completedOrders: [],
     bots: [],
-    activeBotLimit: 0,
 }
 
 function reducer(state: State, action: Action): State {
@@ -95,14 +93,26 @@ function reducer(state: State, action: Action): State {
             return {
                 ...state,
                 bots: [...state.bots, ...action.payload.newBots],
-                activeBotLimit: state.activeBotLimit + action.payload.count,
             }
         }
 
-        case 'DECREASE_BOTS': {
+        case 'DESTROY_BOTS': {
+            if (action.payload.botIds.length === 0) return state
+
+            const botIdsToDestroy = new Set(action.payload.botIds)
+            const removedOrderIds = state.bots
+                .filter((bot) => botIdsToDestroy.has(bot.id))
+                .flatMap((bot) => (bot.currentOrderId === null ? [] : [bot.currentOrderId]))
+
+            const ordersToRequeue = state.processingOrders
+                .filter((order) => removedOrderIds.includes(order.id))
+                .map((order) => ({ ...order, status: 'PENDING' as const }))
+
             return {
                 ...state,
-                activeBotLimit: Math.max(0, state.activeBotLimit - action.payload.count),
+                pendingOrders: sortPendingOrders([...state.pendingOrders, ...ordersToRequeue]),
+                processingOrders: state.processingOrders.filter((order) => !removedOrderIds.includes(order.id)),
+                bots: state.bots.filter((bot) => !botIdsToDestroy.has(bot.id)),
             }
         }
 
@@ -111,11 +121,7 @@ function reducer(state: State, action: Action): State {
             const processing = [...state.processingOrders]
             const bots = [...state.bots]
 
-            const eligibleBotIds = bots.slice(0, state.activeBotLimit).map((b) => b.id)
-
-            for (const botId of eligibleBotIds) {
-                const botIndex = bots.findIndex((b) => b.id === botId)
-                if (botIndex === -1) continue
+            for (let botIndex = 0; botIndex < bots.length; botIndex += 1) {
                 if (bots[botIndex].isBusy) continue
                 if (pending.length === 0) break
 
@@ -205,16 +211,28 @@ export function McDonaldsOrderProvider({ children }: { children: React.ReactNode
 
         dispatch({
             type: 'INCREASE_BOTS',
-            payload: { count, newBots },
+            payload: { newBots },
         })
     }
 
     const decreaseBots = (count = 1) => {
         if (count <= 0) return
 
+        const botsToDestroy = state.bots.slice(-Math.min(count, state.bots.length))
+
+        botsToDestroy.forEach((bot) => {
+            if (bot.currentOrderId === null) return
+
+            const timerId = timersRef.current[bot.currentOrderId]
+            if (timerId) {
+                window.clearTimeout(timerId)
+                delete timersRef.current[bot.currentOrderId]
+            }
+        })
+
         dispatch({
-            type: 'DECREASE_BOTS',
-            payload: { count },
+            type: 'DESTROY_BOTS',
+            payload: { botIds: botsToDestroy.map((bot) => bot.id) },
         })
     }
 
@@ -227,7 +245,7 @@ export function McDonaldsOrderProvider({ children }: { children: React.ReactNode
 
     useEffect(() => {
         dispatch({ type: 'DISPATCH_ORDERS' })
-    }, [state.pendingOrders.length, state.activeBotLimit])
+    }, [state.pendingOrders.length, state.bots.length])
 
     useEffect(() => {
         state.processingOrders.forEach((order) => {
@@ -260,16 +278,13 @@ export function McDonaldsOrderProvider({ children }: { children: React.ReactNode
         }
     }, [])
 
-    const value = useMemo(
-        () => ({
-            ...state,
-            submitOrder,
-            increaseBots,
-            decreaseBots,
-            removeCompleteOrders,
-        }),
-        [state],
-    )
+    const value: ContextValue = {
+        ...state,
+        submitOrder,
+        increaseBots,
+        decreaseBots,
+        removeCompleteOrders,
+    }
 
     return <McDonaldsOrderContext.Provider value={value}>{children}</McDonaldsOrderContext.Provider>
 }
