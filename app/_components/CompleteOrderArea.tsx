@@ -13,7 +13,7 @@ const CompleteOrderArea = () => {
                     <h2 className='heading-face mt-2 text-3xl uppercase text-[#201914]'>Complete</h2>
                 </div>
                 <span className='rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] bg-[#fff0c8] text-[#8f5b0f]'>
-                    xx items
+                    {completedOrders.length} items
                 </span>
             </div>
 

@@ -21,7 +21,7 @@ const OrderCard = ({ item, isComplete }: OrderCardProps) => {
                 <span className='heading-face text-lg uppercase text-[#231b15]'>no. {item.id}</span>
             </div>
             <div className='flex justify-between'>
-                <p className='mt-2 text-sm leading-6 text-[#4e433a]'>{item.menu}</p>
+                <p className='mt-2 text-md leading-6 text-[#4e433a] font-bold capitalize'>{item.menu}</p>
                 {isComplete && (
                     <button
                         className='cursor-pointer rounded-full px-2 py-1 text-xs font-semibold uppercase tracking-[0.18em] bg-[#d2472a] text-white'
